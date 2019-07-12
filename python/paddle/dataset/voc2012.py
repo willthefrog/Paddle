@@ -26,7 +26,12 @@ import io
 import numpy as np
 from paddle.dataset.common import download
 from paddle.dataset.image import *
-from PIL import Image
+
+try:
+    from PIL import Image
+except ImportError:
+    import sys
+    sys.stderr.write("PIL not installed, dataset.voc2012 is unavailable\n")
 
 __all__ = ['train', 'test', 'val']
 

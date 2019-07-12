@@ -35,7 +35,6 @@ import itertools
 import functools
 from .common import download
 import tarfile
-import scipy.io as scio
 from paddle.dataset.image import *
 from paddle.reader import *
 from paddle import compat as cpt
@@ -44,6 +43,13 @@ import numpy as np
 from multiprocessing import cpu_count
 import six
 from six.moves import cPickle as pickle
+
+try:
+    import scipy.io as scio
+except ImportError:
+    import sys
+    sys.stderr.write("scipy not installed, dataset.flowers is unavailable\n")
+
 __all__ = ['train', 'test', 'valid']
 
 DATA_URL = 'http://paddlemodels.bj.bcebos.com/flowers/102flowers.tgz'
