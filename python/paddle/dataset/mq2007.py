@@ -27,9 +27,14 @@ from __future__ import print_function
 
 import os
 import functools
-import rarfile
 from .common import download
 import numpy as np
+
+try:
+    import rarfile
+except ImportError:
+    import sys
+    sys.stderr.write("rarfile not installed, dataset.mq2007 is unavailable\n")
 
 # URL = "http://research.microsoft.com/en-us/um/beijing/projects/letor/LETOR4.0/Data/MQ2007.rar"
 URL = "http://www.bigdatalab.ac.cn/benchmark/upload/download_source/7b6dbbe2-842c-11e4-a536-bcaec51b9163_MQ2007.rar"

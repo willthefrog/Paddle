@@ -19,13 +19,19 @@ from ....log_helper import get_logger
 from .... import layers
 import prettytable as pt
 import numpy as np
-from scipy.optimize import leastsq
 import copy
 import re
 import os
 import pickle
 import logging
 import sys
+
+try:
+    from scipy.optimize import leastsq
+except ImportError:
+    import sys
+    sys.stderr.write("scipy not installed, slim is unavailable")
+
 
 __all__ = ['SensitivePruneStrategy', 'UniformPruneStrategy', 'PruneStrategy']
 
