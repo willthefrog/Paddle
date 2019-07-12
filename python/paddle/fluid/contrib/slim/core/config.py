@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-import funcsigs
 import yaml
 from collections import OrderedDict
 from ..prune import *
@@ -22,6 +21,11 @@ from .strategy import *
 from ..distillation import *
 from ..searcher import *
 from ..nas import *
+
+try:
+    from inspect import signature
+except ImportError:
+    from funcsigs import signature
 
 __all__ = ['ConfigFactory']
 """This factory is used to create instances by loading and parsing configure file with yaml format.
@@ -50,7 +54,7 @@ class ConfigFactory(object):
     def _new_instance(self, name, attrs):
         if name not in self.instances:
             class_ = globals()[attrs['class']]
-            sig = funcsigs.signature(class_.__init__)
+            sig = signature(class_.__init__)
             keys = [
                 param.name for param in sig.parameters.values()
                 if (param.kind == param.POSITIONAL_OR_KEYWORD)

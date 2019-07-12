@@ -26,8 +26,13 @@ import six
 import collections
 from itertools import chain
 
-import nltk
-from nltk.corpus import movie_reviews
+
+try:
+    import nltk
+    from nltk.corpus import movie_reviews
+except ImportError:
+    import sys
+    sys.stderr.write("nltk not installed, dataset.sentiment is unavailable\n")
 
 import paddle.dataset.common
 
