@@ -71,7 +71,7 @@ struct IdentityFunctor {
 };
 
 template <typename T, typename M>
-struct AlphaOffsetFunctor {
+struct AlphaFunctor {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
                                  size_t idx) const {}
 };
@@ -112,12 +112,12 @@ __global__ void PReluGradElementWiseKernel(const T* x_ptr_, const T* y_ptr_,
   const T* dy_ptr = dy_ptr_ + offset;
   T* dx_ptr = dx_ptr_ + offset;
   T* dalpha_ptr = dalpha_ptr_ + offset;
-  auto alpha_func = AlphaFunctor<T, M>();
+  AlphaFunctor<T, M> alpha_func;
 
   for (size_t i = threadIdx.x; i < spatial_size; i += blockDim.x) {
     T y = y_ptr[i];
     T x = x_ptr[i];
-    T alpha = alpha_func(alpha, spatial_size, i);
+    T alpha = alpha_func(alpha_ptr_, spatial_size, i);
     T dy = dy_ptr[i];
     if (dx_ptr != nullptr) dx_ptr[i] = (y > 0) ? dy : alpha * dy;
     if (dalpha_ptr != nullptr) dalpha_ptr[i] = (x > 0) ? 0 : dy;
