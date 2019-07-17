@@ -68,13 +68,13 @@ struct ScalarMode {};
 template <typename T, typename M>
 struct AlphaFunctor {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
-                                 size_t idx) const {}
+                                 size_t channel, size_t idx) const {
 };
 
 template <typename T>
 struct AlphaFunctor<T, prelu::ElementWiseMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
-                                 size_t idx) const {
+                                 size_t channel, size_t idx) const {
     return alpha[blockIdx.x * spatial_size + idx];
   }
 };
@@ -82,24 +82,25 @@ struct AlphaFunctor<T, prelu::ElementWiseMode> {
 template <typename T>
 struct AlphaFunctor<T, prelu::ChannelMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
-                                 size_t idx) const {
-    return alpha[blockIdx.x];
+                                 size_t channel, size_t idx) const {
+    return alpha[blockIdx.x % channel];
   }
 };
 
 template <typename T>
 struct AlphaFunctor<T, prelu::ScalarMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
-                                 size_t idx) const {
+                                 size_t channel, size_t idx) const {
     return alpha[0];
   }
 };
 
 template <typename T, typename M>
 __global__ void PReluGradElementWiseKernel(const T* x_ptr, const T* y_ptr,
-                                           const T* alpha_ptr,
-                                           const T* dy_ptr, T* dx_ptr,
-                                           T* dalpha_ptr, size_t spatial_size) {
+                                           const T* alpha_ptr, const T* dy_ptr,
+                                           T* dx_ptr, T* dalpha_ptr,
+                                           size_t channel,
+                                           size_t spatial_size) {
   size_t offset = blockIdx.x * spatial_size;
   AlphaFunctor<T, M> alpha_func;
 
@@ -122,7 +123,7 @@ class PreluGradElementwiseFunctor {
     size_t spatial_size = input_shape[2] * input_shape[3];
     CHECK_LT(unroll, CUDA_MAX_NUM_BLOCKS);
     PReluGradElementWiseKernel<T, M><<<unroll, CUDA_NUM_THREADS, 0, stream>>>(
-        x, y, alpha, dy, dx, dalpha, spatial_size);
+        x, y, alpha, dy, dx, dalpha, input_shape[0], spatial_size);
   }
 };
 
