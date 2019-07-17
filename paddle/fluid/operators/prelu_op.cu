@@ -110,8 +110,8 @@ __global__ void PReluGradElementWiseKernel(const T* x_ptr_, const T* y_ptr_,
   const T* x_ptr = x_ptr_ + offset;
   const T* y_ptr = y_ptr_ + offset;
   const T* dy_ptr = dy_ptr_ + offset;
-  T* dx_ptr = dx_ptr_ + offset;
-  T* dalpha_ptr = dalpha_ptr_ + offset;
+  T* dx_ptr = dx_ptr_ != nullptr ? dx_ptr_ + offset : nullptr;
+  T* dalpha_ptr = dalpha_ptr_ != nullptr ? dalpha_ptr_ + offset : nullptr;
   AlphaFunctor<T, M> alpha_func;
 
   for (size_t i = threadIdx.x; i < spatial_size; i += blockDim.x) {
@@ -155,6 +155,8 @@ class CUDAPReluGradKernel : public framework::OpKernel<T> {
     T* dx_ptr = dx ? dx->mutable_data<T>(context.GetPlace()) : nullptr;
     T* dalpha_ptr =
         dalpha ? dalpha->mutable_data<T>(context.GetPlace()) : nullptr;
+
+    if (!dx && !dalpha) return;
 
     auto& mode = context.Attr<std::string>("mode");
 
