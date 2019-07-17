@@ -77,7 +77,7 @@ struct AlphaOffsetFunctor {
 };
 
 template <typename T>
-struct AlphaFunctor<T, ElementWiseMode> {
+struct AlphaFunctor<T, prelu::ElementWiseMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
                                  size_t idx) const {
     return alpha[blockIdx.x * spatial_size + idx];
@@ -85,7 +85,7 @@ struct AlphaFunctor<T, ElementWiseMode> {
 };
 
 template <typename T>
-struct AlphaFunctor<T, ChannelMode> {
+struct AlphaFunctor<T, prelu::ChannelMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
                                  size_t idx) const {
     return alpha[blockIdx.x];
@@ -93,7 +93,7 @@ struct AlphaFunctor<T, ChannelMode> {
 };
 
 template <typename T>
-struct AlphaFunctor<T, ScalarMode> {
+struct AlphaFunctor<T, prelu::ScalarMode> {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
                                  size_t idx) const {
     return alpha[0];
