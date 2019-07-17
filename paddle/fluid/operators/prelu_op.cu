@@ -99,8 +99,7 @@ template <typename T, typename M>
 __global__ void PReluGradElementWiseKernel(const T* x_ptr, const T* y_ptr,
                                            const T* alpha_ptr,
                                            const T* dy_ptr, T* dx_ptr,
-                                           T* dalpha_ptr, size_t channel,
-                                           size_t spatial_size) {
+                                           T* dalpha_ptr, size_t spatial_size) {
   size_t offset = blockIdx.x * spatial_size;
   AlphaFunctor<T, M> alpha_func;
 
@@ -110,7 +109,7 @@ __global__ void PReluGradElementWiseKernel(const T* x_ptr, const T* y_ptr,
     T dy = dy_ptr[offset + i];
     T alpha = alpha_func(alpha_ptr, spatial_size, i);
     if (dx_ptr != nullptr) dx_ptr[offset + i] = (y > 0) ? dy : alpha * dy;
-    if (dalpha_ptr != nullptr) dalpha_ptr[offset + i] = (x > 0) ? 0 : dy;
+    if (dalpha_ptr != nullptr) dalpha_ptr[offset + i] = (x > 0) ? 0 : x * dy;
   }
 }
 
@@ -123,7 +122,7 @@ class PreluGradElementwiseFunctor {
     size_t spatial_size = input_shape[2] * input_shape[3];
     CHECK_LT(unroll, CUDA_MAX_NUM_BLOCKS);
     PReluGradElementWiseKernel<T, M><<<unroll, CUDA_NUM_THREADS, 0, stream>>>(
-        x, y, alpha, dy, dx, dalpha, input_shape[1], spatial_size);
+        x, y, alpha, dy, dx, dalpha, spatial_size);
   }
 };
 
