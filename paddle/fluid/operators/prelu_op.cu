@@ -175,14 +175,17 @@ class CUDAPReluGradKernel : public framework::OpKernel<T> {
 
     if (mode == "element") {
       PreluGradElementwiseFunctor<T, prelu::ElementWiseMode> prelu_grad;
+      prelu_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
+                 dalpha_tmp_ptr, input_shape);
     } else if (mode == "channel") {
       PreluGradElementwiseFunctor<T, prelu::ChannelMode> prelu_grad;
+      prelu_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
+                 dalpha_tmp_ptr, input_shape);
     } else {
       PreluGradElementwiseFunctor<T, prelu::ScalarMode> prelu_grad;
+      prelu_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
+                 dalpha_tmp_ptr, input_shape);
     }
-
-    prelu_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
-               dalpha_tmp_ptr, input_shape);
 
     if (mode == "element" || dalpha_tmp_ptr == nullptr) return;
 
