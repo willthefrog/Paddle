@@ -65,11 +65,6 @@ struct ChannelMode {};
 struct ScalarMode {};
 } /* namespace prelu */
 
-template <typename T>
-struct IdentityFunctor {
-  HOSTDEVICE inline T operator()(const T& x) const { return x; }
-};
-
 template <typename T, typename M>
 struct AlphaFunctor {
   HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
@@ -101,26 +96,21 @@ struct AlphaFunctor<T, prelu::ScalarMode> {
 };
 
 template <typename T, typename M>
-__global__ void PReluGradElementWiseKernel(const T* x_ptr_, const T* y_ptr_,
-                                           const T* alpha_ptr_,
-                                           const T* dy_ptr_, T* dx_ptr_,
-                                           T* dalpha_ptr_, size_t channel,
+__global__ void PReluGradElementWiseKernel(const T* x_ptr, const T* y_ptr,
+                                           const T* alpha_ptr,
+                                           const T* dy_ptr, T* dx_ptr,
+                                           T* dalpha_ptr, size_t channel,
                                            size_t spatial_size) {
   size_t offset = blockIdx.x * spatial_size;
-  const T* x_ptr = x_ptr_ + offset;
-  const T* y_ptr = y_ptr_ + offset;
-  const T* dy_ptr = dy_ptr_ + offset;
-  T* dx_ptr = dx_ptr_ != nullptr ? dx_ptr_ + offset : nullptr;
-  T* dalpha_ptr = dalpha_ptr_ != nullptr ? dalpha_ptr_ + offset : nullptr;
   AlphaFunctor<T, M> alpha_func;
 
   for (size_t i = threadIdx.x; i < spatial_size; i += blockDim.x) {
-    T y = y_ptr[i];
-    T x = x_ptr[i];
-    T alpha = alpha_func(alpha_ptr_, spatial_size, i);
-    T dy = dy_ptr[i];
-    if (dx_ptr != nullptr) dx_ptr[i] = (y > 0) ? dy : alpha * dy;
-    if (dalpha_ptr != nullptr) dalpha_ptr[i] = (x > 0) ? 0 : dy;
+    T y = y_ptr[offset + i];
+    T x = x_ptr[offset + i];
+    T dy = dy_ptr[offset + i];
+    T alpha = alpha_func(alpha_ptr, spatial_size, i);
+    if (dx_ptr != nullptr) dx_ptr[offset + i] = (y > 0) ? dy : alpha * dy;
+    if (dalpha_ptr != nullptr) dalpha_ptr[offset + i] = (x > 0) ? 0 : dy;
   }
 }
 
@@ -135,6 +125,11 @@ class PreluGradElementwiseFunctor {
     PReluGradElementWiseKernel<T, M><<<unroll, CUDA_NUM_THREADS, 0, stream>>>(
         x, y, alpha, dy, dx, dalpha, input_shape[1], spatial_size);
   }
+};
+
+template <typename T>
+struct IdentityFunctor {
+  HOSTDEVICE inline T operator()(const T& x) const { return x; }
 };
 
 template <typename DeviceContext, typename T>
