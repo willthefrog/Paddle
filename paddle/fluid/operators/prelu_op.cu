@@ -59,12 +59,48 @@ class CUDAPReluKernel : public framework::OpKernel<T> {
   }
 };
 
+namespace prelu {
+struct ElementWiseMode {};
+struct ChannelMode {};
+struct ScalarMode {};
+} /* namespace prelu */
+
 template <typename T>
 struct IdentityFunctor {
   HOSTDEVICE inline T operator()(const T& x) const { return x; }
 };
 
+template <typename T, typename M>
+struct AlphaOffsetFunctor {
+  HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
+                                 size_t idx) const {}
+};
+
 template <typename T>
+struct AlphaFunctor<T, ElementWiseMode> {
+  HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
+                                 size_t idx) const {
+    return alpha[blockIdx.x * spatial_size + idx];
+  }
+};
+
+template <typename T>
+struct AlphaFunctor<T, ChannelMode> {
+  HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
+                                 size_t idx) const {
+    return alpha[blockIdx.x];
+  }
+};
+
+template <typename T>
+struct AlphaFunctor<T, ScalarMode> {
+  HOSTDEVICE inline T operator()(const T* alpha, size_t spatial_size,
+                                 size_t idx) const {
+    return alpha[0];
+  }
+};
+
+template <typename T, typename M>
 __global__ void PReluGradElementWiseKernel(const T* x_ptr_, const T* y_ptr_,
                                            const T* alpha_ptr_,
                                            const T* dy_ptr_, T* dx_ptr_,
@@ -74,21 +110,21 @@ __global__ void PReluGradElementWiseKernel(const T* x_ptr_, const T* y_ptr_,
   const T* x_ptr = x_ptr_ + offset;
   const T* y_ptr = y_ptr_ + offset;
   const T* dy_ptr = dy_ptr_ + offset;
-  const T* alpha_ptr = y_ptr_ + offset;
   T* dx_ptr = dx_ptr_ + offset;
   T* dalpha_ptr = dalpha_ptr_ + offset;
+  auto alpha_func = AlphaFunctor<T, M>();
 
   for (size_t i = threadIdx.x; i < spatial_size; i += blockDim.x) {
     T y = y_ptr[i];
     T x = x_ptr[i];
-    T alpha = alpha_ptr[i];
+    T alpha = alpha_func(alpha, spatial_size, i);
     T dy = dy_ptr[i];
     if (dx_ptr != nullptr) dx_ptr[i] = (y > 0) ? dy : alpha * dy;
     if (dalpha_ptr != nullptr) dalpha_ptr[i] = (x > 0) ? 0 : dy;
   }
 }
 
-template <typename T>
+template <typename T, typename M>
 class PreluGradElementwiseFunctor {
  public:
   void operator()(cudaStream_t stream, const T* x, const T* y, const T* alpha,
@@ -96,7 +132,7 @@ class PreluGradElementwiseFunctor {
     size_t unroll = input_shape[0] * input_shape[1];
     size_t spatial_size = input_shape[2] * input_shape[3];
     CHECK_LT(unroll, CUDA_MAX_NUM_BLOCKS);
-    PReluGradElementWiseKernel<T><<<unroll, CUDA_NUM_THREADS, 0, stream>>>(
+    PReluGradElementWiseKernel<T, M><<<unroll, CUDA_NUM_THREADS, 0, stream>>>(
         x, y, alpha, dy, dx, dalpha, input_shape[1], spatial_size);
   }
 };
@@ -129,21 +165,26 @@ class CUDAPReluGradKernel : public framework::OpKernel<T> {
 
     T* dalpha_tmp_ptr;
     Tensor dalpha_tmp;
-    if (mode == "element") {
+    if (mode == "element" || dalpha_ptr == nullptr) {
       dalpha_tmp_ptr = dalpha_ptr;
-    } else if (dalpha_ptr == nullptr) {
-      dalpha_tmp_ptr = nullptr;
     } else {
       auto& dev_ctx = context.template device_context<DeviceContext>();
       dalpha_tmp = context.AllocateTmpTensor<T, DeviceContext>(dim, dev_ctx);
       dalpha_tmp_ptr = dalpha_tmp.mutable_data<T>(context.GetPlace());
     }
 
-    PreluGradElementwiseFunctor<T> prelu_element_wise_grad;
-    prelu_element_wise_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
-                            dalpha_tmp_ptr, input_shape);
+    if (mode == "element") {
+      PreluGradElementwiseFunctor<T, prelu::ElementWiseMode> prelu_grad;
+    } else if (mode == "channel") {
+      PreluGradElementwiseFunctor<T, prelu::ChannelMode> prelu_grad;
+    } else {
+      PreluGradElementwiseFunctor<T, prelu::ScalarMode> prelu_grad;
+    }
 
-    if (mode == "element" || dalpha_ptr == nullptr) return;
+    prelu_grad(stream, x_ptr, y_ptr, alpha_ptr, dy_ptr, dx_ptr,
+               dalpha_tmp_ptr, input_shape);
+
+    if (mode == "element" || dalpha_tmp_ptr == nullptr) return;
 
     std::vector<int> reduce_dims;
     for (size_t i = 0; i < input_shape.size(); i++) {
