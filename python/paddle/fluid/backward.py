@@ -403,7 +403,7 @@ def _append_backward_ops_(block,
     if callbacks is not None:
         assert (isinstance(callbacks, list))
         for cb in callbacks:
-            if not hasattr(cb, '__call__'):
+            if not callable(cb):
                 raise ValueError("'callback' must be a callable object.")
 
     # grad_op_descs holds created grad_op, and will be appended to target_block
@@ -417,12 +417,9 @@ def _append_backward_ops_(block,
             grad_sub_block = program._create_block()
             grad_sub_block._set_forward_block_idx(sub_block.idx)
             # see follwing comments for why set None here.
-            pre_input_grad_names_set = copy.copy(input_grad_names_set)
-            input_grad_names_set = None
             _append_backward_ops_(sub_block, sub_block.ops, grad_sub_block,
                                   no_grad_dict, grad_to_var, callbacks,
-                                  input_grad_names_set)
-            input_grad_names_set = pre_input_grad_names_set
+                                  None)
 
             program._rollback()
             grad_sub_block_list.append(grad_sub_block.desc)
@@ -477,7 +474,6 @@ def _append_backward_ops_(block,
         new_op_desc._set_attr(op_role_attr_name, backward)
         grad_to_var["__current_op_desc__"] = new_op_desc
         if callbacks is not None:
-            assert (isinstance(callbacks, list))
             for cb in callbacks:
                 cb(block=target_block, context=grad_to_var)
 
@@ -641,9 +637,6 @@ def append_backward(loss, parameter_list=None, no_grad_set=None,
     loss.op._set_attr(core.op_proto_and_checker_maker.kOpRoleAttrName(),
                       int(core.op_proto_and_checker_maker.OpRole.Forward) |
                       int(core.op_proto_and_checker_maker.OpRole.Loss))
-
-    if callbacks is not None:
-        isinstance(callbacks, list)
 
     program = loss.block.program
     program._appending_grad_times += 1
