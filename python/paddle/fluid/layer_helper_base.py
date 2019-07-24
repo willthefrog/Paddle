@@ -21,6 +21,7 @@ from .framework import Variable, default_main_program, default_startup_program, 
 from . import unique_name
 from .param_attr import ParamAttr, WeightNormParamAttr
 from . import core
+from .mixed_precision import mixed_precision_global_state
 
 
 class LayerHelperBase(object):
@@ -322,12 +323,36 @@ class LayerHelperBase(object):
                 shape=shape,
                 **attr._to_kwargs(with_initializer=True))
         else:
+            mp_state = mixed_precision_global_state()
+            is_half = (isinstance(dtype, str) and dtype == 'float16') \
+                or (isinstance(dtype, core.VarDesc.VarType)
+                    and dtype == core.VarDesc.VarType.FP16)
+
+            if is_half and mp_state is not None:
+                dtype = 'float32'
+
             self.startup_program.global_block().create_parameter(
                 dtype=dtype,
                 shape=shape,
                 **attr._to_kwargs(with_initializer=True))
-            return self.main_program.global_block().create_parameter(
+            param = self.main_program.global_block().create_parameter(
                 dtype=dtype, shape=shape, **attr._to_kwargs())
+
+            if not is_half or mp_state is None:
+                return param
+
+            param16 = self.main_program.current_block().create_var(
+                name=param.name + '.cast',
+                dtype='float16',
+                type=core.VarDesc.VarType.LOD_TENSOR,
+                persistable=False)    # XXX triage
+            self.append_op(
+                type='cast',
+                inputs={'X': [param]},
+                outputs={'Out': [param16]},
+                attrs={'in_dtype': param.dtype,
+                       'out_dtype': param16.dtype})
+            return param16
 
     def create_variable_for_type_inference(self, dtype, stop_gradient=False):
         """Create a temporary variable that should be type inferred layer.
