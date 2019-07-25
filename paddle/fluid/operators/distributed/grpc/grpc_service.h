@@ -32,11 +32,13 @@
 //       requests without too much copying of the tensor data.
 
 namespace grpc {
-class CompletionQueue;
+#ifndef PADDLE_WITH_SYSTEM_GRPC
 class Channel;
-class RpcService;
+class CompletionQueue;
 class ServerCompletionQueue;
 class ServerContext;
+#endif /* PADDLE_WITH_SYSTEM_GRPC */
+class RpcService;
 
 // Support parsing/unparsing of tensorflow::VariableResponse.
 // Wire-format is identical to RecvVariableResponse.
