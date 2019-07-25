@@ -81,6 +81,7 @@ option(WITH_XBYAK       "Compile with xbyak support"                    ON)
 option(WITH_CONTRIB     "Compile the third-party contributation"        OFF)
 option(REPLACE_ENFORCE_GLOG "Replace PADDLE_ENFORCE with glog/CHECK for better debug." OFF)
 option(WITH_GRPC     "Use grpc as the default rpc framework"            ${WITH_DISTRIBUTE})
+option(WITH_SYSTEM_GRPC  "Use system grpc instead of third party"       OFF)
 option(WITH_INFERENCE_API_TEST   "Test fluid inference C++ high-level api interface"  OFF)
 option(WITH_HIGH_LEVEL_API_TEST   "Test fluid python high-level api interface"  OFF)
 option(PY_VERSION       "Compile PaddlePaddle with python3 support"     ${PY_VERSION})
@@ -191,6 +192,10 @@ if(ON_INFER)
 else()
     #TODO(luotao), combine this warning with `make inference_lib_dist` command.
     message(WARNING "On inference mode, will take place some specific optimization. Turn on the ON_INFER flag when building inference_lib only.")
+endif()
+
+if (WITH_SYSTEM_GRPC)
+    add_definitions(-DPADDLE_WITH_SYSTEM_GRPC)
 endif()
 
 add_subdirectory(paddle)
