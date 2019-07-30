@@ -49,6 +49,7 @@ from . import inferencer
 
 from . import io
 from . import evaluator
+from . import experimental
 from . import initializer
 from . import layers
 from . import dygraph
@@ -63,7 +64,6 @@ from . import metrics
 from . import transpiler
 from . import incubate
 from . import distribute_lookup_table
-from . import mixed_precision
 from .param_attr import ParamAttr, WeightNormParamAttr
 from .data_feeder import DataFeeder
 from .core import LoDTensor, LoDTensorArray, CPUPlace, CUDAPlace, CUDAPinnedPlace, Scope, _Scope
@@ -84,13 +84,12 @@ from paddle.fluid.layers.math_op_patch import monkey_patch_variable
 from . import install_check
 from .dygraph.nn import *
 from .dygraph.layers import *
-from .mixed_precision import *
 
 Tensor = LoDTensor
 
 __all__ = framework.__all__ + executor.__all__ + \
     trainer_desc.__all__ + inferencer.__all__ + transpiler.__all__ + \
-    parallel_executor.__all__ + lod_tensor.__all__ + mixed_precision.__all__ + \
+    parallel_executor.__all__ + lod_tensor.__all__ + \
     data_feed_desc.__all__ + compiler.__all__ + backward.__all__ + [
         'io',
         'initializer',

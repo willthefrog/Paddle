@@ -16,13 +16,19 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 import six
-from .framework import Parameter
-from . import layers
-from . import core
-from . import unique_name
+from ..framework import Parameter
+from .. import core
+from .. import unique_name
+# potential circular import when python version is old
+try:
+    from .. import layers
+except ImportError:
+    import sys
+    layers = sys.modules['paddle.fluid.layers']
 
 __all__ = ['mixed_precision_global_state', 'mixed_precision_context',
-           'StaticLossScale', 'DynamicLossScale']
+           'StaticLossScale', 'DynamicLossScale',
+           'update_loss_scale', 'scale_gradient']
 
 _mixed_precision_global_state = None
 

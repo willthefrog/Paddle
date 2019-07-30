@@ -21,7 +21,7 @@ from .framework import Variable, default_main_program, default_startup_program, 
 from . import unique_name
 from .param_attr import ParamAttr, WeightNormParamAttr
 from . import core
-from .mixed_precision import mixed_precision_global_state
+from .experimental import mixed_precision_global_state
 
 
 class LayerHelperBase(object):

@@ -36,7 +36,7 @@ from paddle.fluid import core
 from paddle.fluid.layers import tensor
 from functools import reduce
 from .wrapped_decorator import signature_safe_contextmanager
-from .mixed_precision import mixed_precision_global_state, update_loss_scale, scale_gradient
+from .experimental import mixed_precision_global_state, update_loss_scale, scale_gradient
 
 __all__ = [
     'SGD', 'Momentum', 'Adagrad', 'Adam', 'Adamax', 'DecayedAdagrad', 'Ftrl',
