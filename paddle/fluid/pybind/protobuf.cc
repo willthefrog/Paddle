@@ -136,7 +136,7 @@ void BindBlockDesc(pybind11::module *m) {
       .def("serialize_to_string", SerializeMessage<pd::BlockDesc>);
 }
 
-void BindVarDsec(pybind11::module *m) {
+void BindVarDesc(pybind11::module *m) {
   pybind11::class_<pd::VarDesc> var_desc(*m, "VarDesc", "");
   var_desc.def(pybind11::init<const std::string &>())
       .def("name", &pd::VarDesc::Name, pybind11::return_value_policy::reference)
