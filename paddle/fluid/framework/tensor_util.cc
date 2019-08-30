@@ -76,6 +76,17 @@ void TensorCopy(const Tensor& src, const platform::Place& dst_place,
     auto stream =
         reinterpret_cast<const platform::CUDADeviceContext&>(ctx).stream();
     memory::Copy(dst_gpu_place, dst_ptr, src_cpu_place, src_ptr, size, stream);
+  } else if (platform::is_cuda_pinned_place(src_place) &&
+             platform::is_gpu_place(dst_place)) {
+    auto src_pinned_place = boost::get<platform::CUDAPinnedPlace>(src_place);
+    auto dst_gpu_place = boost::get<platform::CUDAPlace>(dst_place);
+    auto ctx_place = ctx.GetPlace();
+    PADDLE_ENFORCE_EQ(platform::is_gpu_place(ctx_place), true);
+    auto ctx_gpu_place = boost::get<platform::CUDAPlace>(ctx_place);
+    PADDLE_ENFORCE_EQ(dst_gpu_place, ctx_gpu_place);
+    auto stream =
+        reinterpret_cast<const platform::CUDADeviceContext&>(ctx).stream();
+    memory::Copy(dst_gpu_place, dst_ptr, src_pinned_place, src_ptr, size, stream);
   } else if (platform::is_gpu_place(src_place) &&
              platform::is_gpu_place(dst_place)) {
     auto src_gpu_place = boost::get<platform::CUDAPlace>(src_place);
