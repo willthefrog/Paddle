@@ -138,23 +138,25 @@ class DynamicLossScale(LossScale):
                 with layers.Switch() as switch2:
                     with switch2.case(scale_valid):
                         layers.assign(new_scale, self.scale)
+                        layers.assign(layers.zeros_like(self.good_steps),
+                                      self.good_steps)
                     with switch2.default():
-                        pass
+                        layers.increment(self.good_steps)
             with switch.default():
-                pass
-            layers.increment(self.good_steps)
+                layers.increment(self.good_steps)
 
     def decrement(self):
         new_scale = self.scale / self.factor
         one = layers.fill_constant(shape=[1], dtype='float32', value=1.0)
-        zero = layers.fill_constant(shape=[1], dtype='int32', value=0)
         less_than_one = layers.less_than(new_scale, one)
         with layers.Switch() as switch:
             with switch.case(less_than_one):
                 layers.assign(one, self.scale)
             with switch.default():
                 layers.assign(new_scale, self.scale)
-        layers.assign(zero, self.good_steps)
+
+        layers.assign(layers.zeros_like(self.good_steps),
+                      self.good_steps)
 
 
 class mixed_precision_context(object):
@@ -188,6 +190,8 @@ class mixed_precision_context(object):
                 # scale loss
                 loss_scale = ctx.get_loss_scale_var()
                 avg_loss *= loss_scale
+                optimizer = fluid.optimizer.Momentum(...)
+                optimizer.minimize(avg_loss)
 
     """
 
@@ -261,3 +265,4 @@ def update_loss_scale(grads):
             state.increment()
         with switch.default():
             state.decrement()
+    return grad_valid
