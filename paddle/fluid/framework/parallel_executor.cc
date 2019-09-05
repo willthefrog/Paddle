@@ -715,7 +715,12 @@ void ParallelExecutor::FeedTensorsIntoLocalScopes(
       auto *feed_var = feed_scope->Var(pair.first);
 
       auto *trg = feed_var->GetMutable<LoDTensor>();
-      trg->ShareDataWith(pair.second);
+      auto dst_place = member_->places_[i];
+      if (platform::is_gpu_place(dst_place)) {
+        framework::TensorCopy(pair.second, dst_place, trg);
+      } else {
+        trg->ShareDataWith(pair.second);
+      }
       trg->set_lod(pair.second.lod());
     }
   }
