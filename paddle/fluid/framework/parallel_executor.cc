@@ -736,10 +736,6 @@ void ParallelExecutor::FeedTensorsIntoLocalScopes(
     const std::vector<std::unordered_map<std::string, LoDTensor>> &tensors) {
   PADDLE_ENFORCE_EQ(member_->local_scopes_.size(), tensors.size());
 
-  platform::DeviceContextPool& pool = platform::DeviceContextPool::Instance();
-  platform::DeviceContext* ctx = nullptr;
-  bool sync_stream = false;
-
   for (size_t i = 0; i < tensors.size(); ++i) {
     auto &map = tensors[i];
     for (auto &pair : map) {
@@ -752,27 +748,10 @@ void ParallelExecutor::FeedTensorsIntoLocalScopes(
       auto *feed_var = feed_scope->Var(pair.first);
 
       auto *trg = feed_var->GetMutable<LoDTensor>();
-      auto &dst_place = member_->places_[i];
-      auto src_place = pair.second.place();
-      if (platform::is_gpu_place(dst_place) && !is_same_place(
-            src_place, dst_place)) {
-        sync_stream = true;
-        if (ctx == nullptr) ctx = pool.Get(dst_place);
-        framework::TensorCopy(pair.second, dst_place, *ctx, trg);
-      } else {
-        trg->ShareDataWith(pair.second);
-      }
+      trg->ShareDataWith(pair.second);
       trg->set_lod(pair.second.lod());
     }
   }
-
-#ifdef PADDLE_WITH_CUDA
-  if (sync_stream) {
-    auto stream =
-      reinterpret_cast<const platform::CUDADeviceContext&>(*ctx).stream();
-    PADDLE_ENFORCE(cudaStreamSynchronize(stream));
-  }
-#endif
 }
 
 void ParallelExecutor::FeedAndSplitTensorIntoLocalScopes(
