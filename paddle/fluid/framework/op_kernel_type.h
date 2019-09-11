@@ -101,7 +101,9 @@ inline bool NeedTransformLayout(const DataLayout& l, const DataLayout& r) {
 }
 
 inline bool NeedTransform(const OpKernelType& l, const OpKernelType& r) {
-  return (!platform::places_are_same_class(l.place_, r.place_)) ||
+  return !(platform::places_are_same_class(l.place_, r.place_) ||
+           (!platform::is_gpu_place(l.place_) &&
+            !platform::is_gpu_place(r.place_))) ||
          (l.data_type_ != r.data_type_) ||
          NeedTransformLayout(l.data_layout_, r.data_layout_);
 }
