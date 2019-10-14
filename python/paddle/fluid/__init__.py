@@ -49,6 +49,7 @@ from . import inferencer
 
 from . import io
 from . import evaluator
+from . import experimental
 from . import initializer
 from . import layers
 from . import dygraph

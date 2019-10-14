@@ -36,6 +36,7 @@ from paddle.fluid import core
 from paddle.fluid.layers import tensor
 from functools import reduce
 from .wrapped_decorator import signature_safe_contextmanager
+from .experimental import mixed_precision_global_state, update_loss_scale, scale_gradient
 
 __all__ = [
     'SGD', 'Momentum', 'Adagrad', 'Adam', 'Adamax', 'DecayedAdagrad', 'Ftrl',
@@ -484,10 +485,13 @@ class Optimizer(object):
                         ivar=param._ivar._grad_ivar())
                     params_grads.append((param, grad_var))
         else:
+            mp_state = mixed_precision_global_state()
             if callbacks is None:
                 callbacks = [error_clip_callback]
             else:
                 assert (isinstance(callbacks, list))
+            if mp_state is not None:
+                callbacks = [scale_gradient] + callbacks
             program = loss.block.program
             with program_guard(program, startup_program):
                 params_grads = append_backward(loss, parameter_list,
@@ -495,7 +499,15 @@ class Optimizer(object):
                 # Note: since we can't use all_reduce_op now,
                 #  dgc_op should be the last op of one grad.
                 self._append_dgc_ops(params_grads)
-        return params_grads
+                if mp_state is not None:
+                    grad_valid = update_loss_scale(v for k, v in params_grads)
+                    if mp_state.dynamic_scaling:
+                        with layers.Switch() as switch:
+                            with switch.case(grad_valid):
+                                pass
+                            with switch.default():
+                                for _, g in params_grads:
+                                    layers.assign(layers.zeros_like(g), g)
 
     def apply_gradients(self, params_grads):
         """
