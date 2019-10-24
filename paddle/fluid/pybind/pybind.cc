@@ -276,6 +276,24 @@ PYBIND11_MODULE(core_noavx, m) {
     return tensor;
   });
 
+  m.def("_get_static_dict",
+        [](const py::handle &vec_var_list, const Scope &scope) {
+          std::vector<std::string> vec_name_list = GetNameList(vec_var_list);
+          auto map_name_tensor = GetTensorDict(vec_name_list, scope);
+
+          std::map<std::string, Tensor&> map_output;
+          for (auto it : map_name_tensor) {
+            map_output.emplace(it.first, *(it.second));
+          }
+          return map_output;
+        });
+
+  m.def("_set_static_dict",
+        [](const std::map<std::string, Tensor&> &state_dict,
+           const Scope &scope) {
+          return SetTensorDict(state_dict, scope);
+        });
+
   m.def("_save_static_dict",
         [](const std::string &str_file_name, const py::handle &vec_var_list,
            const Scope &scope) {

@@ -50,5 +50,12 @@ bool LoadTensorFromDisk(
     const std::string& file_name,
     std::map<std::string, std::shared_ptr<Tensor>>* map_tensor);
 
+
+std::map<std::string, Tensor*> GetTensorDict(
+    const std::vector<std::string>& vec_tensor_name_list, const Scope& scope);
+
+bool SetTensorDict(
+    const std::map<std::string, Tensor&>& map_name_tensor, const Scope& scope);
+
 }  // namespace framework
 }  // namespace paddle

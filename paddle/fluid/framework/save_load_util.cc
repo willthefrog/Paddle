@@ -110,8 +110,7 @@ void ReadReserveBuffer(std::istream& istre) {
   delete[] reserve_buffer;
 }
 
-bool SaveStaticNameListToDisk(
-    const std::string& file_name,
+std::map<std::string, Tensor*> GetTensorDict(
     const std::vector<std::string>& vec_tensor_name_list, const Scope& scope) {
   std::map<std::string, Tensor*> map_tensor;
 
@@ -130,8 +129,14 @@ bool SaveStaticNameListToDisk(
 
     map_tensor[vec_tensor_name_list[i]] = tensor;
   }
+  return map_tensor;
+}
 
-  return SaveTensorToDisk(file_name, map_tensor);
+bool SaveStaticNameListToDisk(
+    const std::string& file_name,
+    const std::vector<std::string>& vec_tensor_name_list, const Scope& scope) {
+  auto map_name_tensor = GetTensorDict(vec_tensor_name_list, scope);
+  return SaveTensorToDisk(file_name, map_name_tensor);
 }
 
 bool SaveDygraphVarBaseListToDisk(
@@ -177,54 +182,48 @@ LoadDygraphVarBaseListFromDisk(const std::string& file_name) {
   return vec_res;
 }
 
-bool LoadStaticNameListFromDisk(
-    const std::string& file_name,
-    const std::vector<std::string>& vec_tensor_name_list, const Scope& scope) {
-  std::map<std::string, std::shared_ptr<Tensor>> map_load_tensor;
-  LoadTensorFromDisk(file_name, &map_load_tensor);
-
-  for (size_t i = 0; i < vec_tensor_name_list.size(); ++i) {
-    auto it = map_load_tensor.find(vec_tensor_name_list[i]);
-    PADDLE_ENFORCE(it != map_load_tensor.end(),
-                   "Paramete not found in Model file, "
-                   "Can not find [%s] in model file [%s]",
-                   vec_tensor_name_list[i], file_name);
-    auto var_ptr = scope.FindVar(vec_tensor_name_list[i]);
+bool SetTensorDict(const std::map<std::string, Tensor&>& map_name_tensor,
+                   const Scope& scope) {
+  std::vector<std::string> found;
+  for (auto it : map_name_tensor) {
+    auto name = it.first;
+    auto var_ptr = scope.FindVar(name);
 
     PADDLE_ENFORCE_NE(
         var_ptr, nullptr,
         "Parameter not created, when load model, can't not find parameter [%s] "
         "please make sure you have run StartUpProgram",
-        vec_tensor_name_list[i]);
+        name);
 
     Tensor* tensor = var_ptr->GetMutable<LoDTensor>();
     PADDLE_ENFORCE_NE(tensor, nullptr,
                       "Paramter [%s] not initialzed "
                       "please make sure you have run startUpProgram",
-                      vec_tensor_name_list[i]);
+                      name);
 
     PADDLE_ENFORCE_EQ(tensor->IsInitialized(), true,
                       "Paramter [%s] not initialzed "
                       "please make sure you have run StartUpProgram",
-                      vec_tensor_name_list[i]);
+                      name);
     PADDLE_ENFORCE_EQ(
-        tensor->dims(), it->second->dims(),
+        tensor->dims(), it.second.dims(),
         "Shape not matching: the Program requires a parameter with a shape of "
         "(%s), "
         "while the loaded parameter (namely [ %s ]) has a shape of  (%s).",
-        tensor->dims(), vec_tensor_name_list[i], it->second->dims());
+        tensor->dims(), name, it.second.dims());
 
-    TensorCopySync(*(it->second.get()), tensor->place(), tensor);
+    TensorCopySync(it.second, tensor->place(), tensor);
 
-    map_load_tensor.erase(it);
+    found.push_back(it.first);
   }
 
-  if (map_load_tensor.size() > 0) {
-    std::string used_tensor_message = "There is [" +
-                                      std::to_string(map_load_tensor.size()) +
+  auto leftover = map_name_tensor.size() - found.size();
+
+  if (leftover > 0) {
+    std::string used_tensor_message = "There is [" + std::to_string(leftover) +
                                       "] tensor in model file not used: ";
 
-    for (auto& tensor_temp : map_load_tensor) {
+    for (auto& tensor_temp : map_name_tensor) {
       used_tensor_message += " " + tensor_temp.first;
     }
 
@@ -232,6 +231,25 @@ bool LoadStaticNameListFromDisk(
   }
 
   return true;
+}
+
+bool LoadStaticNameListFromDisk(
+    const std::string& file_name,
+    const std::vector<std::string>& vec_tensor_name_list, const Scope& scope) {
+  std::map<std::string, std::shared_ptr<Tensor>> map_load_tensor;
+  LoadTensorFromDisk(file_name, &map_load_tensor);
+  std::map<std::string, Tensor&> map_output;
+
+  for (size_t i = 0; i < vec_tensor_name_list.size(); ++i) {
+    auto it = map_load_tensor.find(vec_tensor_name_list[i]);
+    PADDLE_ENFORCE(it != map_load_tensor.end(),
+                   "Paramete not found in Model file, "
+                   "Can not find [%s] in model file [%s]",
+                   vec_tensor_name_list[i], file_name);
+    map_output.emplace(vec_tensor_name_list[i], *(it->second));
+  }
+
+  return SetTensorDict(map_output, scope);
 }
 
 bool SaveTensorToDisk(const std::string& file_name,
