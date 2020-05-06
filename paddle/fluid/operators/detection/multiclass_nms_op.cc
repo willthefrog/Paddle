@@ -181,6 +181,75 @@ class MultiClassNMSKernel : public framework::OpKernel<T> {
     }
   }
 
+  void NMSMatrix(const Tensor& bbox, const Tensor& scores,
+                 const T score_threshold, const bool use_gaussian,
+                 const T sigma, const int64_t top_k,
+                 std::vector<int>* selected_indices,
+                 const bool normalized) const {
+    // The total boxes for each instance.
+    int64_t num_boxes = bbox.dims()[0];
+    // 4: [xmin ymin xmax ymax]
+    // 8: [x1 y1 x2 y2 x3 y3 x4 y4]
+    // 16, 24, or 32: [x1 y1 x2 y2 ...  xn yn], n = 8, 12 or 16
+    int64_t box_size = bbox.dims()[1];
+
+    std::vector<T> scores_data(num_boxes);
+    std::copy_n(scores.data<T>(), num_boxes, scores_data.begin());
+    std::vector<std::pair<T, int>> sorted_indices;
+    GetMaxScoreIndex(scores_data, score_threshold, top_k, &sorted_indices);
+
+    selected_indices->clear();
+    const T* bbox_data = bbox.data<T>();
+
+    auto num_pre = sorted_indices.size();
+    std::vector<T> iou_matrix((num_pre * (num_pre - 1)) >> 1);
+    std::vector<T> iou_max(num_pre);
+
+    size_t i, j, ptr;
+    T max_per_{0.};
+    T min_per_{0.};
+    int idx_a, idx_b;
+
+    // this snippet is duplicated because:
+    // 1. branching in a hot loop could be slow
+    // 2. code is short enough, not worth it to make a macro
+    // 3. [[likely]] is only available since c++20 and compiler specific
+    //    intrinsics is not desirable
+
+    for (i = 0; i < num_pre; i++) {
+      max_per_ = 0.;
+      idx_a = sorted_indices[i].second;
+      for (j = 0; j < i; j++) {
+        idx_b = sorted_indices[j].second;
+        auto iou = JaccardOverlap<T>(bbox_data + idx_a * box_size,
+                                     bbox_data + idx_b * box_size, normalized);
+        max_per_ = std::max(max_per_, iou);
+        iou_matrix[ptr++] = iou;
+      }
+      iou_max[i] = max_per_;
+    }
+
+    ptr = 0;
+    auto scores_it = scores.mutable_data();
+    for (i = 0; i < num_pre; i++) {
+      idx_a = sorted_indices[i].second;
+      selected_indices.push(idx_a);
+      min_per_ = 0.;
+
+      for (j = 0; j < i; j++) {
+        max_per_ = iou_max[j];
+        auto iou = iou_matrix[ptr++];
+        if (use_gaussian) {
+          auto decay = std::exp(-(iou * iou - max_per_ * max_per_) / sigma);
+        } else {
+          auto decay = (1. - iou) / (1. - max_per_);
+        }
+        min_per_ = std::min(min_per_, decay);
+      }
+      *(scores_it + idx_a) *= min_per_;
+    }
+  }
+
   void MultiClassNMS(const framework::ExecutionContext& ctx,
                      const Tensor& scores, const Tensor& bboxes,
                      const int scores_size,
@@ -194,24 +263,41 @@ class MultiClassNMSKernel : public framework::OpKernel<T> {
     T nms_eta = static_cast<T>(ctx.Attr<float>("nms_eta"));
     T score_threshold = static_cast<T>(ctx.Attr<float>("score_threshold"));
     auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
-
+    bool use_matrix_nms = ctx.Attr<bool>("use_matrix_nms");
+    bool matrix_use_gaussian = ctx.Attr<bool>("matrix_use_gaussian");
+    T matrix_gaussian_sigma = static_cast<T>(ctx.Attr<float>(
+                                               "matrix_gaussian_sigma"));
     int num_det = 0;
+
+    Tensor& scores_ = scores;
+    if (use_matrix_nms) {
+      Tensor scores_mutable;
+      framework::TensorCopy(scores, platform::CPUPlace(), dev_ctx,
+                            &scores_mutable);
+      *scores_ = scores_mutable;
+    }
 
     int64_t class_num = scores_size == 3 ? scores.dims()[0] : scores.dims()[1];
     Tensor bbox_slice, score_slice;
     for (int64_t c = 0; c < class_num; ++c) {
       if (c == background_label) continue;
       if (scores_size == 3) {
-        score_slice = scores.Slice(c, c + 1);
+        score_slice = scores_.Slice(c, c + 1);
         bbox_slice = bboxes;
       } else {
         score_slice.Resize({scores.dims()[0], 1});
         bbox_slice.Resize({scores.dims()[0], 4});
-        SliceOneClass<T>(dev_ctx, scores, c, &score_slice);
+        SliceOneClass<T>(dev_ctx, scores_, c, &score_slice);
         SliceOneClass<T>(dev_ctx, bboxes, c, &bbox_slice);
       }
-      NMSFast(bbox_slice, score_slice, score_threshold, nms_threshold, nms_eta,
-              nms_top_k, &((*indices)[c]), normalized);
+      if (use_matrix_nms) {
+        NMSMatrix(bbox_slice, score_slice, score_threshold,
+                  matrix_use_gaussian, matrix_gaussian_sigma, nms_top_k,
+                  &((*indices)[c]), normalized);
+      } else{
+        NMSFast(bbox_slice, score_slice, score_threshold, nms_threshold, nms_eta,
+                nms_top_k, &((*indices)[c]), normalized);
+      }
       if (scores_size == 2) {
         std::stable_sort((*indices)[c].begin(), (*indices)[c].end());
       }
@@ -219,7 +305,7 @@ class MultiClassNMSKernel : public framework::OpKernel<T> {
     }
 
     *num_nmsed_out = num_det;
-    const T* scores_data = scores.data<T>();
+    const T* scores_data = scores_.data<T>();
     if (keep_top_k > -1 && num_det > keep_top_k) {
       const T* sdata;
       std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
@@ -229,7 +315,7 @@ class MultiClassNMSKernel : public framework::OpKernel<T> {
           sdata = scores_data + label * scores.dims()[1];
         } else {
           score_slice.Resize({scores.dims()[0], 1});
-          SliceOneClass<T>(dev_ctx, scores, label, &score_slice);
+          SliceOneClass<T>(dev_ctx, scores_, label, &score_slice);
           sdata = score_slice.data<T>();
         }
         const std::vector<int>& label_indices = it.second;
@@ -458,6 +544,25 @@ class MultiClassNMSOpMaker : public framework::OpProtoAndCheckerMaker {
                   "(bool, default true) "
                   "Whether detections are normalized.")
         .SetDefault(true);
+    AddAttr<bool>("use_matrix_nms",
+                  "(bool, default false) "
+                  "Whether to use matrix nms.")
+        .SetDefault(false);
+    AddAttr<bool>("matrix_use_gaussian",
+                  "(bool, default false) "
+                  "Whether to use Gaussian as decreasing function, only takes",
+                  " effect when 'use_matrix_nms' is enabled.")
+        .SetDefault(false);
+    AddAttr<float>("matrix_gaussian_sigma",
+                  "(float) "
+                  "Sigma for Gaussian decreasing function, only takes effect ",
+                   "when 'matrix_use_gaussian' is enabled.")
+        .SetDefault(false);
+    AddAttr<float>("matrix_post_thresh",
+                  "(float) "
+                  "Score threshold after matrix nms, only takes effect ",
+                   "when 'matrix_use_gaussian' is enabled.")
+        .SetDefault(false);
     AddOutput("Out",
               "(LoDTensor) A 2-D LoDTensor with shape [No, 6] represents the "
               "detections. Each row has 6 values: "
