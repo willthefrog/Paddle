@@ -170,7 +170,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       NMSMatrix(bbox_slice, score_slice, score_threshold,
                 use_gaussian, gaussian_sigma, nms_top_k,
                 &((*indices)[c]), normalized);
-      cls_det = (*indices)[c].size()
+      cls_det = (*indices)[c].size();
       if (keep_top_k > -1 && cls_det > keep_top_k) {
         (*indices)[c].resize(keep_top_k);
       }
