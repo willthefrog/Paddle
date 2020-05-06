@@ -76,7 +76,7 @@ class MatrixNMSOp : public framework::OperatorWithKernel {
 template <typename T>
 class MatrixNMSKernel : public framework::OpKernel<T> {
  public:
-  void NMSMatrix(const Tensor& bbox, const Tensor& scores,
+  void NMSMatrix(const Tensor& bbox, Tensor& scores,
                  const T score_threshold, const bool use_gaussian,
                  const T sigma, const int64_t top_k,
                  std::vector<int>* selected_indices,
