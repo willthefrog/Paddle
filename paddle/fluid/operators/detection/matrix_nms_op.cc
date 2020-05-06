@@ -73,28 +73,6 @@ class MatrixNMSOp : public framework::OperatorWithKernel {
   }
 };
 
-template <class T>
-void SliceOneClass(const platform::DeviceContext& ctx,
-                   const framework::Tensor& items, const int class_id,
-                   framework::Tensor* one_class_item) {
-  T* item_data = one_class_item->mutable_data<T>(ctx.GetPlace());
-  const T* items_data = items.data<T>();
-  const int64_t num_item = items.dims()[0];
-  const int class_num = items.dims()[1];
-  if (items.dims().size() == 3) {
-    int item_size = items.dims()[2];
-    for (int i = 0; i < num_item; ++i) {
-      std::memcpy(item_data + i * item_size,
-                  items_data + i * class_num * item_size + class_id * item_size,
-                  sizeof(T) * item_size);
-    }
-  } else {
-    for (int i = 0; i < num_item; ++i) {
-      item_data[i] = items_data[i * class_num + class_id];
-    }
-  }
-}
-
 template <typename T>
 class MatrixNMSKernel : public framework::OpKernel<T> {
  public:
@@ -148,7 +126,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     T decay;
     for (i = 0; i < num_pre; i++) {
       idx_a = sorted_indices[i].second;
-      selected_indices->push(idx_a);
+      selected_indices->push_back(idx_a);
       min_per_ = 0.;
 
       for (j = 0; j < i; j++) {
@@ -184,6 +162,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
 
     int64_t class_num = scores.dims()[0];
     Tensor bbox_slice, score_slice;
+    int cls_det = 0;
     for (int64_t c = 0; c < class_num; ++c) {
       if (c == background_label) continue;
       score_slice = scores.Slice(c, c + 1);
@@ -191,10 +170,11 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       NMSMatrix(bbox_slice, score_slice, score_threshold,
                 use_gaussian, gaussian_sigma, nms_top_k,
                 &((*indices)[c]), normalized);
-      if (keep_top_k > -1 && (*indices)[c].size() > keep_top_k) {
+      cls_det = (*indices)[c].size()
+      if (keep_top_k > -1 && cls_det > keep_top_k) {
         (*indices)[c].resize(keep_top_k);
       }
-      num_det += (*indices)[c].size();
+      num_det += cls_det;
     }
 
     *num_nmsed_out = num_det;
@@ -236,7 +216,6 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
                         const std::map<int, std::vector<int>>& selected_indices,
                         Tensor* outs, int* oindices = nullptr,
                         const int offset = 0) const {
-    int64_t class_num = scores.dims()[1];
     int64_t predict_dim = scores.dims()[1];
     int64_t box_size = bboxes.dims()[1];
     int64_t out_dim = box_size + 2;
@@ -312,7 +291,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
         if (e > s) {
           Tensor out = outs->Slice(s, e);
           MultiClassOutput(dev_ctx, scores_slice, boxes_slice, all_indices[i],
-                           score_dims.size(), &out, oindices, offset);
+                           &out, oindices, offset);
         }
       }
     }
