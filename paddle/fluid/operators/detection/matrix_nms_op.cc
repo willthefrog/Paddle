@@ -122,7 +122,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     //    intrinsics is not desirable
 
     ptr = 0;
-    T* scores_it = scores.mutable_data<T>();
+    T* scores_it = scores.data<T>();
     T decay;
     for (i = 0; i < num_pre; i++) {
       idx_a = sorted_indices[i].second;
