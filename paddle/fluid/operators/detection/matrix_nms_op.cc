@@ -144,7 +144,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
   }
 
   void MultiClassMatrixNMS(const framework::ExecutionContext& ctx,
-                           const Tensor& scores_, const Tensor& bboxes,
+                           const Tensor& scores, const Tensor& bboxes,
                            std::map<int, std::vector<int>>* indices,
                            int* num_nmsed_out) const {
     int64_t background_label = ctx.Attr<int>("background_label");
@@ -157,8 +157,8 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     T gaussian_sigma = static_cast<T>(ctx.Attr<float>("gaussian_sigma"));
     int num_det = 0;
 
-    Tensor scores;
-    framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
+    // Tensor scores;
+    // framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
 
     int64_t class_num = scores.dims()[0];
     Tensor bbox_slice, score_slice;
