@@ -152,7 +152,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     int64_t keep_top_k = ctx.Attr<int>("keep_top_k");
     bool normalized = ctx.Attr<bool>("normalized");
     T score_threshold = static_cast<T>(ctx.Attr<float>("score_threshold"));
-    auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
+    // auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
     bool use_gaussian = ctx.Attr<bool>("use_gaussian");
     T gaussian_sigma = static_cast<T>(ctx.Attr<float>("gaussian_sigma"));
     int num_det = 0;
