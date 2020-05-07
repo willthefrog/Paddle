@@ -145,7 +145,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
   }
 
   void MultiClassMatrixNMS(const framework::ExecutionContext& ctx,
-                           const Tensor& scores, const Tensor& bboxes,
+                           const Tensor& scores_, const Tensor& bboxes,
                            std::map<int, std::vector<int>>* indices,
                            int* num_nmsed_out) const {
     int64_t background_label = ctx.Attr<int>("background_label");
@@ -153,14 +153,15 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     int64_t keep_top_k = ctx.Attr<int>("keep_top_k");
     bool normalized = ctx.Attr<bool>("normalized");
     T score_threshold = static_cast<T>(ctx.Attr<float>("score_threshold"));
-    // auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
+    auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
     bool use_gaussian = ctx.Attr<bool>("use_gaussian");
     T gaussian_sigma = static_cast<T>(ctx.Attr<float>("gaussian_sigma"));
     int num_det = 0;
 
+    Tensor scores;
+    framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
+
     std::cout << "before per class==============\n";
-    // Tensor scores;
-    // framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
 
     int64_t class_num = scores.dims()[0];
     Tensor bbox_slice, score_slice;
