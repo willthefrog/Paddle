@@ -13,7 +13,6 @@ limitations under the License. */
 
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/detection/nms_util.h"
-#include <iostream>
 
 namespace paddle {
 namespace operators {
@@ -77,11 +76,12 @@ class MatrixNMSOp : public framework::OperatorWithKernel {
 template <typename T>
 class MatrixNMSKernel : public framework::OpKernel<T> {
  public:
-  void NMSMatrix(const Tensor& bbox, Tensor& scores,
+  void NMSMatrix(const Tensor& bbox, const Tensor& scores,
                  const T score_threshold, const bool use_gaussian,
                  const T sigma, const int64_t top_k,
+                 const bool normalized,
                  std::vector<int>* selected_indices,
-                 const bool normalized) const {
+                 std::vector<T>* decayed_scores) const {
     // The total boxes for each instance.
     int64_t num_boxes = bbox.dims()[0];
     int64_t box_size = bbox.dims()[1];
@@ -98,22 +98,22 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     std::vector<T> iou_matrix((num_pre * (num_pre - 1)) >> 1);
     std::vector<T> iou_max(num_pre);
 
-    size_t i, j, ptr;
-    T max_per_{0.};
-    T min_per_{0.};
+    size_t i, j, ptr = 0;
+    T max_iou{0.};
+    T min_decay{0.};
     int idx_a, idx_b;
 
     for (i = 0; i < num_pre; i++) {
-      max_per_ = 0.;
+      max_iou = 0.;
       idx_a = sorted_indices[i].second;
       for (j = 0; j < i; j++) {
         idx_b = sorted_indices[j].second;
         auto iou = JaccardOverlap<T>(bbox_data + idx_a * box_size,
                                      bbox_data + idx_b * box_size, normalized);
-        max_per_ = std::max(max_per_, iou);
+        max_iou = std::max(max_iou, iou);
         iou_matrix[ptr++] = iou;
       }
-      iou_max[i] = max_per_;
+      iou_max[i] = max_iou;
     }
 
     // this snippet is duplicated because:
@@ -123,29 +123,27 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     //    intrinsics is not desirable
 
     ptr = 0;
-    T* scores_it = scores.data<T>();
     T decay;
     for (i = 0; i < num_pre; i++) {
       idx_a = sorted_indices[i].second;
       selected_indices->push_back(idx_a);
-      min_per_ = 0.;
-
+      min_decay = 0.;
       for (j = 0; j < i; j++) {
-        max_per_ = iou_max[j];
+        max_iou = iou_max[j];
         auto iou = iou_matrix[ptr++];
         if (use_gaussian) {
-          decay = std::exp(-(iou * iou - max_per_ * max_per_) / sigma);
+          decay = std::exp(-(iou * iou - max_iou * max_iou) / sigma);
         } else {
-          decay = (1. - iou) / (1. - max_per_);
+          decay = (1. - iou) / (1. - max_iou);
         }
-        min_per_ = std::min(min_per_, decay);
+        min_decay = std::min(min_decay, decay);
       }
-      *(scores_it + idx_a) *= min_per_;
+      decayed_scores->push_back(min_decay * sorted_indices[i].first);
     }
   }
 
   void MultiClassMatrixNMS(const framework::ExecutionContext& ctx,
-                           const Tensor& scores_, const Tensor& bboxes,
+                           const Tensor& scores, const Tensor& bboxes,
                            std::map<int, std::vector<int>>* indices,
                            int* num_nmsed_out) const {
     int64_t background_label = ctx.Attr<int>("background_label");
@@ -156,64 +154,51 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     auto& dev_ctx = ctx.template device_context<platform::CPUDeviceContext>();
     bool use_gaussian = ctx.Attr<bool>("use_gaussian");
     T gaussian_sigma = static_cast<T>(ctx.Attr<float>("gaussian_sigma"));
-    int num_det = 0;
 
-    Tensor scores;
-    framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
-
-    std::cout << "before per class==============\n";
+    std::vector<int> all_indices;
+    std::vector<T> all_scores;
+    std::vector<int> all_classes;
+    all_indices.reserve(scores.numel());
+    all_scores.reserve(scores.numel());
+    all_classes.reserve(scores.numel());
 
     int64_t class_num = scores.dims()[0];
-    Tensor bbox_slice, score_slice;
-    int cls_det = 0;
+    int64_t num_det = 0;
+    Tensor score_slice;
     for (int64_t c = 0; c < class_num; ++c) {
       if (c == background_label) continue;
       score_slice = scores.Slice(c, c + 1);
-      bbox_slice = bboxes;
-      NMSMatrix(bbox_slice, score_slice, score_threshold,
+      NMSMatrix(bboxes, score_slice, score_threshold,
                 use_gaussian, gaussian_sigma, nms_top_k,
-                &((*indices)[c]), normalized);
-      cls_det = (*indices)[c].size();
-      if (keep_top_k > -1 && cls_det > keep_top_k) {
-        (*indices)[c].resize(keep_top_k);
+                normalized, &all_indices, &all_scores);
+      for (size_t i = 0; i < all_indices.size() - num_det; i++) {
+        all_classes.push_back(c);
       }
-      num_det += cls_det;
+      num_det = all_indices.size();
     }
-    std::cout << "after per class==============\n";
+
+    if (keep_top_k > -1 && num_det > keep_top_k) {
+      num_det = keep_top_k;
+    }
+
+    std::vector<int32_t> perm(all_indices.size());
+    std::iota(perm.begin(), perm.end(), 0);
+
+    std::partial_sort(perm.begin(),
+                      perm.begin() + num_det,
+                      perm.end(),
+                      [&all_scores](int lhs, int rhs) {
+                        return all_scores[lhs] > all_scores[rhs];
+                      });
+
+    for (int i = 0; i < num_det; i++) {
+      auto p = perm[i];
+      auto idx = all_indices[p];
+      auto cls = all_classes[p];
+      (*indices)[cls].push_back(idx);
+    }
 
     *num_nmsed_out = num_det;
-    const T* scores_data = scores.data<T>();
-    if (keep_top_k > -1 && num_det > keep_top_k) {
-      const T* sdata;
-      std::vector<std::pair<float, std::pair<int, int>>> score_index_pairs;
-      for (const auto& it : *indices) {
-        int label = it.first;
-        sdata = scores_data + label * scores.dims()[1];
-        const std::vector<int>& label_indices = it.second;
-        for (size_t j = 0; j < label_indices.size(); ++j) {
-          int idx = label_indices[j];
-          score_index_pairs.push_back(
-              std::make_pair(sdata[idx], std::make_pair(label, idx)));
-        }
-      }
-      std::cout << "before sorting ==============\n";
-      // Keep top k results per image.
-      std::partial_sort(score_index_pairs.begin(),
-                        score_index_pairs.begin() + keep_top_k,
-                        score_index_pairs.end(),
-                        SortScorePairDescend<std::pair<int, int>>);
-      score_index_pairs.resize(keep_top_k);
-
-      // Store the new indices.
-      std::map<int, std::vector<int>> new_indices;
-      for (size_t j = 0; j < score_index_pairs.size(); ++j) {
-        int label = score_index_pairs[j].second.first;
-        int idx = score_index_pairs[j].second.second;
-        new_indices[label].push_back(idx);
-      }
-      new_indices.swap(*indices);
-      *num_nmsed_out = keep_top_k;
-    }
   }
 
   void MultiClassOutput(const platform::DeviceContext& ctx,
