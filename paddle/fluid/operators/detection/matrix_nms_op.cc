@@ -13,6 +13,7 @@ limitations under the License. */
 
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/detection/nms_util.h"
+#include <iostream>
 
 namespace paddle {
 namespace operators {
@@ -157,6 +158,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     T gaussian_sigma = static_cast<T>(ctx.Attr<float>("gaussian_sigma"));
     int num_det = 0;
 
+    std::cout << "before per class==============\n";
     // Tensor scores;
     // framework::TensorCopy(scores_, platform::CPUPlace(), dev_ctx, &scores);
 
@@ -176,6 +178,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       }
       num_det += cls_det;
     }
+    std::cout << "after per class==============\n";
 
     *num_nmsed_out = num_det;
     const T* scores_data = scores.data<T>();
@@ -192,6 +195,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
               std::make_pair(sdata[idx], std::make_pair(label, idx)));
         }
       }
+      std::cout << "before sorting ==============\n";
       // Keep top k results per image.
       std::partial_sort(score_index_pairs.begin(),
                         score_index_pairs.begin() + keep_top_k,
