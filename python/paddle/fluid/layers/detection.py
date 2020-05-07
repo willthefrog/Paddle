@@ -57,6 +57,7 @@ __all__ = [
     'box_clip',
     'multiclass_nms',
     'locality_aware_nms',
+    'matrix_nms',
     'retinanet_detection_output',
     'distribute_fpn_proposals',
     'box_decoder_and_assign',
