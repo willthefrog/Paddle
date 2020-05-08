@@ -190,7 +190,7 @@ def batched_multiclass_nms(boxes,
 
 class TestMatrixNMSOp(OpTest):
     def set_argument(self):
-        self.score_threshold = 0.01
+        self.post_threshold = 0.01
 
     def setUp(self):
         self.set_argument()
@@ -202,7 +202,8 @@ class TestMatrixNMSOp(OpTest):
         nms_threshold = 0.3
         nms_top_k = 400
         keep_top_k = 200
-        score_threshold = self.score_threshold
+        score_threshold = 0.01
+        post_threshold = self.post_threshold
 
         scores = np.random.random((N * M, C)).astype('float32')
 
@@ -231,6 +232,7 @@ class TestMatrixNMSOp(OpTest):
             'nms_top_k': nms_top_k,
             'keep_top_k': keep_top_k,
             'score_threshold': score_threshold,
+            'post_threshold': post_threshold,
             'use_gaussian': False,
             'gaussian_sigma': 0.5,
             'normalized': True,
@@ -244,7 +246,7 @@ class TestMatrixNMSOpNoOutput(TestMatrixNMSOp):
     def set_argument(self):
         # Here set 2.0 to test the case there is no outputs.
         # In practical use, 0.0 < score_threshold < 1.0
-        self.score_threshold = 2.0
+        self.post_threshold = 2.0
 
 
 class TestIOU(unittest.TestCase):

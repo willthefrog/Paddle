@@ -162,7 +162,8 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
                              std::vector<T>* out, int64_t background_label,
                              int64_t nms_top_k, int64_t keep_top_k,
                              bool normalized, T score_threshold,
-                             bool use_gaussian, float gaussian_sigma) const {
+                             T post_threshold, bool use_gaussian,
+                             float gaussian_sigma) const {
     std::vector<int> all_indices;
     std::vector<T> all_scores;
     std::vector<int> all_classes;
@@ -211,6 +212,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       auto idx = all_indices[p];
       auto cls = static_cast<T>(all_classes[p]);
       auto score = all_scores[p];
+      if (score <= post_threshold) continue;
       auto bbox = bboxes.data<T>() + idx * bboxes.dims()[1];
       (*out).push_back(cls);
       (*out).push_back(score);
@@ -232,6 +234,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     auto keep_top_k = ctx.Attr<int>("keep_top_k");
     auto normalized = ctx.Attr<bool>("normalized");
     auto score_threshold = ctx.Attr<float>("score_threshold");
+    auto post_threshold = ctx.Attr<float>("post_threshold");
     auto use_gaussian = ctx.Attr<bool>("use_gaussian");
     auto gaussian_sigma = ctx.Attr<float>("gaussian_sigma");
 
@@ -252,7 +255,8 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       std::map<int, std::vector<int>> indices;
       num_out = MultiClassMatrixNMS(
         scores_slice, boxes_slice, &out, background_label, nms_top_k,
-        keep_top_k, normalized, score_threshold, use_gaussian, gaussian_sigma);
+        keep_top_k, normalized, score_threshold, post_threshold,
+        use_gaussian, gaussian_sigma);
       offsets.push_back(offsets.back() + num_out);
     }
 
@@ -296,7 +300,11 @@ class MatrixNMSOpMaker : public framework::OpProtoAndCheckerMaker {
     AddAttr<float>("score_threshold",
                    "(float) "
                    "Threshold to filter out bounding boxes with low "
-                   "confidence score. If not provided, consider all boxes.");
+                   "confidence score.");
+    AddAttr<float>("post_threshold",
+                   "(float) "
+                   "Threshold to filter out bounding boxes with low "
+                   "confidence score AFTER decaying.");
     AddAttr<int>("nms_top_k",
                  "(int64_t) "
                  "Maximum number of detections to be kept according to the "

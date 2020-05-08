@@ -3527,6 +3527,7 @@ def locality_aware_nms(bboxes,
 def matrix_nms(bboxes,
                scores,
                score_threshold,
+               post_threshold,
                nms_top_k,
                keep_top_k,
                use_gaussian=False,
@@ -3561,8 +3562,9 @@ def matrix_nms(bboxes,
                            boxes. Please note, M is equal to the 2nd dimension
                            of BBoxes. The data type is float32 or float64.
         score_threshold (float): Threshold to filter out bounding boxes with
-                                 low confidence score. If not provided,
-                                 consider all boxes.
+                                 low confidence score.
+        post_threshold (float): Threshold to filter out bounding boxes with
+                                low confidence score AFTER decaying.
         nms_top_k (int): Maximum number of detections to be kept according to
                          the confidences after the filtering detections based
                          on score_threshold.
@@ -3596,6 +3598,7 @@ def matrix_nms(bboxes,
                                           scores=scores,
                                           background_label=0,
                                           score_threshold=0.5,
+                                          post_threshold=0.1,
                                           nms_top_k=400,
                                           nms_threshold=0.3,
                                           keep_top_k=200,
@@ -3605,7 +3608,8 @@ def matrix_nms(bboxes,
                              'matrix_nms')
     check_variable_and_dtype(scores, 'Scores', ['float32', 'float64'],
                              'matrix_nms')
-    check_type(score_threshold, 'score_threshold', float, 'multicalss_nms')
+    check_type(score_threshold, 'score_threshold', float, 'matrix_nms')
+    check_type(post_threshold, 'post_threshold', float, 'matrix_nms')
     check_type(nms_top_k, 'nums_top_k', int, 'matrix_nms')
     check_type(keep_top_k, 'keep_top_k', int, 'matrix_nms')
     check_type(normalized, 'normalized', bool, 'matrix_nms')
@@ -3622,6 +3626,7 @@ def matrix_nms(bboxes,
         attrs={
             'background_label': background_label,
             'score_threshold': score_threshold,
+            'post_threshold': post_threshold,
             'nms_top_k': nms_top_k,
             'gaussian_sigma': gaussian_sigma,
             'use_gaussian': use_gaussian,
