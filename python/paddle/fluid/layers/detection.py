@@ -3531,7 +3531,7 @@ def matrix_nms(bboxes,
                nms_top_k,
                keep_top_k,
                use_gaussian=False,
-               gaussian_sigma=0.5,
+               gaussian_sigma=2.,
                background_label=0,
                normalized=True,
                name=None):
@@ -3571,7 +3571,7 @@ def matrix_nms(bboxes,
         keep_top_k (int): Number of total bboxes to be kept per image after NMS
                           step. -1 means keeping all bboxes after NMS step.
         use_gaussian (bool): Use Gaussian as the decay function. Default: False
-        gaussian_sigma (float): Sigma for Gaussian decay function. Default: 0.5
+        gaussian_sigma (float): Sigma for Gaussian decay function. Default: 2.0
         background_label (int): The index of background label, the background
                                 label will be ignored. If set to -1, then all
                                 categories will be considered. Default: 0

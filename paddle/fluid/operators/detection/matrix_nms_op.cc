@@ -78,15 +78,15 @@ struct decay_score;
 
 template <typename T>
 struct decay_score<T, true> {
-  T operator()(T iou, T min_iou, T sigma) {
-    return std::exp((min_iou * min_iou - iou * iou) / sigma);
+  T operator()(T iou, T max_iou, T sigma) {
+    return std::exp((max_iou * max_iou - iou * iou) * sigma);
   }
 };
 
 template <typename T>
 struct decay_score<T, false> {
-  T operator()(T iou, T min_iou, T sigma) {
-    return (1. - iou) / (1. - min_iou);
+  T operator()(T iou, T max_iou, T sigma) {
+    return (1. - iou) / (1. - max_iou);
   }
 };
 
@@ -123,30 +123,32 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
   }
 
   std::vector<T> iou_matrix((num_pre * (num_pre - 1)) >> 1);
-  std::vector<T> iou_min(num_pre);
+  std::vector<T> iou_max(num_pre);
 
   size_t ptr = 0;
   for (int64_t i = 0; i < num_pre; i++) {
-    T min_iou = 0.;
+    T max_iou = 0.;
     auto idx_a = perm[i];
     for (int64_t j = 0; j < i; j++) {
       auto idx_b = perm[j];
       auto iou = JaccardOverlap<T>(bbox_ptr + idx_a * box_size,
                                    bbox_ptr + idx_b * box_size, normalized);
-      min_iou = std::min(min_iou, iou);
+      max_iou = std::max(max_iou, iou);
       iou_matrix[ptr++] = iou;
     }
-    iou_min[i] = min_iou;
+    iou_max[i] = max_iou;
   }
 
   ptr = 0;
+  selected_indices->push_back(perm[0]);
+  decayed_scores->push_back(score_ptr[0]);
   decay_score<T, gaussian> decay_fn;
-  for (int64_t i = 0; i < num_pre; i++) {
-    T min_decay = 1.;
+  for (int64_t i = 1; i < num_pre; i++) {
+    auto min_decay = std::numeric_limits<T>::max();
     for (int64_t j = 0; j < i; j++) {
-      auto min_iou = iou_min[j];
+      auto max_iou = iou_max[j];
       auto iou = iou_matrix[ptr++];
-      auto decay = decay_fn(iou, min_iou, sigma);
+      auto decay = decay_fn(iou, max_iou, sigma);
       min_decay = std::min(min_decay, decay);
     }
     selected_indices->push_back(perm[i]);
@@ -326,7 +328,7 @@ class MatrixNMSOpMaker : public framework::OpProtoAndCheckerMaker {
                   "(float) "
                   "Sigma for Gaussian decreasing function, only takes effect ",
                    "when 'use_gaussian' is enabled.")
-        .SetDefault(0.5);
+        .SetDefault(2.);
     AddOutput("Out",
               "(LoDTensor) A 2-D LoDTensor with shape [No, 6] represents the "
               "detections. Each row has 6 values: "
