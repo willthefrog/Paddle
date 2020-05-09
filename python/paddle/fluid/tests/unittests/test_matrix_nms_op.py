@@ -70,7 +70,7 @@ def matrix_nms(boxes,
     iou_cmax = np.repeat(iou_cmax[:, np.newaxis], N, axis=1)
 
     if use_gaussian:
-        decay = np.exp((iou_cmax ** 2 - ious ** 2) / gaussian_sigma)
+        decay = np.exp((iou_cmax ** 2 - ious ** 2) * gaussian_sigma)
     else:
         decay = (1 - ious) / (1 - iou_cmax)
     decay = decay.min(0)
@@ -220,6 +220,12 @@ class TestMatrixNMSOp(OpTest):
 class TestMatrixNMSOpNoOutput(TestMatrixNMSOp):
     def set_argument(self):
         self.post_threshold = 2.0
+
+
+class TestMatrixNMSOpGaussian(TestMatrixNMSOp):
+    def set_argument(self):
+        self.post_threshold = 0.
+        self.use_gaussian = True
 
 
 class TestMatrixNMSError(unittest.TestCase):
