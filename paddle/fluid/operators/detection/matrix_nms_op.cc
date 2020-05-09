@@ -123,8 +123,8 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
   std::vector<T> iou_matrix((num_pre * (num_pre - 1)) >> 1);
   std::vector<T> iou_max(num_pre);
 
-  size_t ptr = 0;
-  for (int64_t i = 0; i < num_pre; i++) {
+  iou_max[0] = 0.;
+  for (int64_t i = 1; i < num_pre; i++) {
     T max_iou = 0.;
     auto idx_a = perm[i];
     for (int64_t j = 0; j < i; j++) {
@@ -132,12 +132,11 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
       auto iou = JaccardOverlap<T>(bbox_ptr + idx_a * box_size,
                                    bbox_ptr + idx_b * box_size, normalized);
       max_iou = std::max(max_iou, iou);
-      iou_matrix[ptr++] = iou;
+      iou_matrix[i * (i - 1) / 2 + j] = iou;
     }
     iou_max[i] = max_iou;
   }
 
-  ptr = 0;
   if (score_ptr[perm[0]] > post_threshold) {
     selected_indices->push_back(perm[0]);
     decayed_scores->push_back(score_ptr[perm[0]]);
@@ -148,7 +147,7 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
     T min_decay = 1.;
     for (int64_t j = 0; j < i; j++) {
       auto max_iou = iou_max[j];
-      auto iou = iou_matrix[ptr++];
+      auto iou = iou_matrix[i * (i - 1) / 2 + j];
       auto decay = decay_fn(iou, max_iou, sigma);
       min_decay = std::min(min_decay, decay);
     }
