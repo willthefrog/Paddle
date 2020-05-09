@@ -92,8 +92,8 @@ struct decay_score<T, false> {
 
 template <typename T, bool gaussian>
 void NMSMatrix(const Tensor& bbox, const Tensor& scores,
-               const float score_threshold, const float sigma,
-               const int64_t top_k, const bool normalized,
+               const T score_threshold, const T post_threshold,
+               const float sigma, const int64_t top_k, const bool normalized,
                std::vector<int>* selected_indices,
                std::vector<T>* decayed_scores) {
   int64_t num_boxes = bbox.dims()[0];
@@ -107,7 +107,7 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
   auto end = std::remove_if(
     perm.begin(), perm.end(),
     [&score_ptr, score_threshold](int32_t idx){
-      return score_ptr[idx] > score_threshold;
+      return score_ptr[idx] <= score_threshold;
     });
 
   auto sort_fn = [&score_ptr](int32_t lhs, int32_t rhs) {
@@ -116,11 +116,9 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
 
   int64_t num_pre = std::distance(perm.begin(), end);
   if (top_k > -1 && num_pre > top_k) {
-    std::partial_sort(perm.begin(), perm.begin() + top_k, end, sort_fn);
     num_pre = top_k;
-  } else {
-    std::stable_sort(perm.begin(), end, sort_fn);
   }
+  std::partial_sort(perm.begin(), perm.begin() + num_pre, end, sort_fn);
 
   std::vector<T> iou_matrix((num_pre * (num_pre - 1)) >> 1);
   std::vector<T> iou_max(num_pre);
@@ -140,19 +138,24 @@ void NMSMatrix(const Tensor& bbox, const Tensor& scores,
   }
 
   ptr = 0;
-  selected_indices->push_back(perm[0]);
-  decayed_scores->push_back(score_ptr[0]);
+  if (score_ptr[perm[0]] > post_threshold) {
+    selected_indices->push_back(perm[0]);
+    decayed_scores->push_back(score_ptr[perm[0]]);
+  }
+
   decay_score<T, gaussian> decay_fn;
   for (int64_t i = 1; i < num_pre; i++) {
-    auto min_decay = std::numeric_limits<T>::max();
+    T min_decay = 1.;
     for (int64_t j = 0; j < i; j++) {
       auto max_iou = iou_max[j];
       auto iou = iou_matrix[ptr++];
       auto decay = decay_fn(iou, max_iou, sigma);
       min_decay = std::min(min_decay, decay);
     }
+    auto ds = min_decay * score_ptr[perm[i]];
+    if (ds <= post_threshold) continue;
     selected_indices->push_back(perm[i]);
-    decayed_scores->push_back(min_decay * score_ptr[i]);
+    decayed_scores->push_back(ds);
   }
 }
 
@@ -168,7 +171,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
                              float gaussian_sigma) const {
     std::vector<int> all_indices;
     std::vector<T> all_scores;
-    std::vector<int> all_classes;
+    std::vector<T> all_classes;
     all_indices.reserve(scores.numel());
     all_scores.reserve(scores.numel());
     all_classes.reserve(scores.numel());
@@ -181,15 +184,15 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       score_slice = scores.Slice(c, c + 1);
       if (use_gaussian) {
         NMSMatrix<T, true>(bboxes, score_slice, score_threshold,
-                        gaussian_sigma, nms_top_k,
-                        normalized, &all_indices, &all_scores);
+                           post_threshold, gaussian_sigma, nms_top_k,
+                           normalized, &all_indices, &all_scores);
       } else {
         NMSMatrix<T, false>(bboxes, score_slice, score_threshold,
-                         gaussian_sigma, nms_top_k,
-                         normalized, &all_indices, &all_scores);
+                            post_threshold, gaussian_sigma, nms_top_k,
+                            normalized, &all_indices, &all_scores);
       }
       for (size_t i = 0; i < all_indices.size() - num_det; i++) {
-        all_classes.push_back(c);
+        all_classes.push_back(static_cast<T>(c));
       }
       num_det = all_indices.size();
     }
@@ -212,9 +215,8 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     for (size_t i = 0; i < num_det; i++) {
       auto p = perm[i];
       auto idx = all_indices[p];
-      auto cls = static_cast<T>(all_classes[p]);
+      auto cls = all_classes[p];
       auto score = all_scores[p];
-      if (score <= post_threshold) continue;
       auto bbox = bboxes.data<T>() + idx * bboxes.dims()[1];
       (*out).push_back(cls);
       (*out).push_back(score);
@@ -248,7 +250,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
     Tensor boxes_slice, scores_slice;
     size_t num_out = 0;
     std::vector<size_t> offsets = {0};
-    std::vector<T> out;
+    std::vector<T> detections;
     for (int i = 0; i < batch_size; ++i) {
       scores_slice = scores->Slice(i, i + 1);
       scores_slice.Resize({score_dims[1], score_dims[2]});
@@ -256,7 +258,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       boxes_slice.Resize({score_dims[2], box_dim});
       std::map<int, std::vector<int>> indices;
       num_out = MultiClassMatrixNMS(
-        scores_slice, boxes_slice, &out, background_label, nms_top_k,
+        scores_slice, boxes_slice, &detections, background_label, nms_top_k,
         keep_top_k, normalized, score_threshold, post_threshold,
         use_gaussian, gaussian_sigma);
       offsets.push_back(offsets.back() + num_out);
@@ -269,7 +271,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       offsets = {0, 1};
     } else {
       outs->mutable_data<T>({num_kept, out_dim}, ctx.GetPlace());
-      std::copy(out.begin(), out.end(), outs->data<T>());
+      std::copy(detections.begin(), detections.end(), outs->data<T>());
     }
 
     framework::LoD lod;
@@ -304,9 +306,10 @@ class MatrixNMSOpMaker : public framework::OpProtoAndCheckerMaker {
                    "Threshold to filter out bounding boxes with low "
                    "confidence score.");
     AddAttr<float>("post_threshold",
-                   "(float) "
+                   "(float, default 0.) "
                    "Threshold to filter out bounding boxes with low "
-                   "confidence score AFTER decaying.");
+                   "confidence score AFTER decaying.")
+      .SetDefault(0.);
     AddAttr<int>("nms_top_k",
                  "(int64_t) "
                  "Maximum number of detections to be kept according to the "
