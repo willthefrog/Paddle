@@ -81,7 +81,7 @@ def matrix_nms(boxes,
         selected_boxes = selected_boxes[inds, :]
         decayed_scores = decayed_scores[inds]
 
-    return decayed_scores, selected_boxes
+    return decayed_scores, selected_boxes, sorted_indices[inds]
 
 
 def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
@@ -93,7 +93,7 @@ def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
     for c in range(scores.shape[0]):
         if c == background:
             continue
-        decayed_scores, selected_boxes = matrix_nms(
+        decayed_scores, selected_boxes, indices = matrix_nms(
             boxes, scores[c], score_threshold, post_threshold, nms_top_k,
             normalized, use_gaussian, gaussian_sigma)
         all_cls.append(np.full(len(decayed_scores), c, decayed_scores.dtype))
@@ -112,12 +112,14 @@ def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
 
     inds = np.argsort(-all_scores, axis=0, kind='mergesort')
     all_pred = all_pred[inds, :]
+    indices = indices[inds]
 
     if keep_top_k > -1 and num_det > keep_top_k:
         num_det = keep_top_k
         all_pred = all_pred[:keep_top_k, :]
+        indices = indices[:keep_top_k, :]
 
-    return all_pred
+    return all_pred, indices
 
 
 def batched_multiclass_nms(boxes,
@@ -132,19 +134,23 @@ def batched_multiclass_nms(boxes,
                            gaussian_sigma=2.):
     batch_size = scores.shape[0]
     det_outs = []
+    index_outs = []
     lod = []
     for n in range(batch_size):
-        nmsed_outs = multiclass_nms(
+        nmsed_outs, indices = multiclass_nms(
             boxes[n], scores[n], background, score_threshold, post_threshold,
             nms_top_k, keep_top_k, normalized, use_gaussian, gaussian_sigma)
         nmsed_num = len(nmsed_outs)
         lod.append(nmsed_num)
         if nmsed_num == 0:
             continue
+        indices += n * scores.shape[2]
         det_outs.append(nmsed_outs)
+        index_outs.append(indices)
     if det_outs:
         det_outs = np.concatenate(det_outs)
-    return det_outs, lod
+        index_outs = np.concatenate(index_outs)
+    return det_outs, index_outs, lod
 
 
 class TestMatrixNMSOp(OpTest):
@@ -178,18 +184,22 @@ class TestMatrixNMSOp(OpTest):
         boxes[:, :, 0:2] = boxes[:, :, 0:2] * 0.5
         boxes[:, :, 2:4] = boxes[:, :, 2:4] * 0.5 + 0.5
 
-        det_outs, lod = batched_multiclass_nms(
+        det_outs, index_outs, lod = batched_multiclass_nms(
             boxes, scores, background, score_threshold, post_threshold,
             nms_top_k, keep_top_k, True, use_gaussian, gaussian_sigma)
 
         empty = len(det_outs) == 0
         lod = [1] if empty else lod
-        det_outs = np.array([[-1]]) if empty else det_outs
+        det_outs = np.array([], dtype=np.float32) if empty else det_outs
+        index_outs = np.array([], dtype=np.float32) if empty else index_outs
         nmsed_outs = det_outs.astype('float32')
 
         self.op_type = 'matrix_nms'
         self.inputs = {'BBoxes': boxes, 'Scores': scores}
-        self.outputs = {'Out': (nmsed_outs, [lod])}
+        self.outputs = {
+            'Out': (nmsed_outs, [lod]),
+            'Index': (index_outs, [lod])
+        }
         self.attrs = {
             'background_label': 0,
             'nms_top_k': nms_top_k,
