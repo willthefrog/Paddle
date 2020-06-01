@@ -80,8 +80,9 @@ def matrix_nms(boxes,
         inds = np.where(decayed_scores > post_threshold)[0]
         selected_boxes = selected_boxes[inds, :]
         decayed_scores = decayed_scores[inds]
+        sorted_indices = sorted_indices[inds]
 
-    return decayed_scores, selected_boxes, sorted_indices[inds]
+    return decayed_scores, selected_boxes, sorted_indices
 
 
 def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
