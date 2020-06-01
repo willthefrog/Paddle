@@ -202,7 +202,7 @@ class TestMatrixNMSOp(OpTest):
         self.inputs = {'BBoxes': boxes, 'Scores': scores}
         self.outputs = {
             'Out': (nmsed_outs, [lod]),
-            'Index': (index_outs, [lod])
+            'Index': (index_outs[:, None], [lod])
         }
         self.attrs = {
             'background_label': 0,
