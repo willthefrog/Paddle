@@ -91,6 +91,7 @@ def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
     all_boxes = []
     all_cls = []
     all_scores = []
+    all_indices = []
     for c in range(scores.shape[0]):
         if c == background:
             continue
@@ -100,27 +101,29 @@ def multiclass_nms(boxes, scores, background, score_threshold, post_threshold,
         all_cls.append(np.full(len(decayed_scores), c, decayed_scores.dtype))
         all_boxes.append(selected_boxes)
         all_scores.append(decayed_scores)
+        all_indices.append(indices)
 
     all_cls = np.concatenate(all_cls)
     all_boxes = np.concatenate(all_boxes)
     all_scores = np.concatenate(all_scores)
+    all_indices = np.concatenate(all_indices)
     all_pred = np.concatenate(
         (all_cls[:, np.newaxis], all_scores[:, np.newaxis], all_boxes), axis=1)
 
     num_det = len(all_pred)
     if num_det == 0:
-        return all_pred
+        return all_pred, np.array([], dtype=np.float32)
 
     inds = np.argsort(-all_scores, axis=0, kind='mergesort')
     all_pred = all_pred[inds, :]
-    indices = indices[inds]
+    all_indices = all_indices[inds]
 
     if keep_top_k > -1 and num_det > keep_top_k:
         num_det = keep_top_k
         all_pred = all_pred[:keep_top_k, :]
-        indices = indices[:keep_top_k, :]
+        all_indices = all_indices[:keep_top_k]
 
-    return all_pred, indices
+    return all_pred, all_indices
 
 
 def batched_multiclass_nms(boxes,

@@ -283,7 +283,7 @@ class MatrixNMSKernel : public framework::OpKernel<T> {
       outs->mutable_data<T>({num_kept, out_dim}, ctx.GetPlace());
       index->mutable_data<int>({num_kept, 1}, ctx.GetPlace());
       std::copy(detections.begin(), detections.end(), outs->data<T>());
-      std::copy(indices.begin(), indices.end(), index->data<T>());
+      std::copy(indices.begin(), indices.end(), index->data<int>());
     }
 
     framework::LoD lod;
